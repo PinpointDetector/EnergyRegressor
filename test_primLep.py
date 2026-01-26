@@ -99,7 +99,7 @@ def run_inference(model, dataloader, device):
         zx = zx.to(device)
         zy = zy.to(device)
 
-        y_log_true = targets["E_nu"].float().to(device)
+        y_log_true = targets["E_lep"].float().to(device)
         y_log_pred = model((zx, zy))
 
         # Undo log10 scaling
@@ -154,9 +154,9 @@ def plot_resolution_hists(E_true, E_pred):
         )
 
     fig.delaxes(axes[-1])
-    plt.savefig("EnergyResolutionPerBin.pdf")
+    plt.savefig("EnergyResolutionPerBin_E_lep.pdf")
     # plt.show()
-    print("Plotted EnergyResolutionPerBin.pdf")
+    print("Plotted EnergyResolutionPerBin_E_lep.pdf")
 
 
 def plot_true_vs_reco(E_true, E_pred, logscale=False):
@@ -210,8 +210,8 @@ def plot_true_vs_reco(E_true, E_pred, logscale=False):
     ax.set_ylabel("Reconstructed Energy [GeV]")
     ax.legend()
     plt.tight_layout()
-    plt.savefig("ETrueVsEReco.pdf")
-    print("Plotted ETrueVsEReco.pdf")
+    plt.savefig("ETrueVsEReco_E_lep.pdf")
+    print("Plotted ETrueVsEReco_E_lep.pdf")
     
 
 
@@ -247,8 +247,8 @@ def plot_resolution_vs_energy(E_true, E_pred):
     ax.set_xscale("log")
     ax.set_xlabel("True Energy [GeV]")
     ax.set_ylabel("Energy Resolution (σ)")
-    plt.savefig("EnergyResolution.pdf")
-    print("Plotted EnergyResolution.pdf")
+    plt.savefig("EnergyResolution_E_lep.pdf")
+    print("Plotted EnergyResolution_E_lep.pdf")
 
 
 # ---------------------------
@@ -268,7 +268,7 @@ def main():
     datamodule.setup()
 
     # Reconstruct model exactly as in training
-    backbone = RegressionCNN(feature_dim=64)
+    backbone = RegressionCNN(feature_dim=128)
     model = EnergyRegressor.load_from_checkpoint(
         args.checkpoint,
         model=backbone,

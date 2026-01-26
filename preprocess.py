@@ -13,6 +13,23 @@ import awkward as ak
 import matplotlib.pyplot as plt
 import mplhep
 
+import numpy as np
+
+def compute_energy_weights(energies, n_bins=20):
+    logE = np.log10(energies)
+
+    bins = np.linspace(logE.min(), logE.max(), n_bins + 1)
+    bin_idx = np.digitize(logE, bins) - 1
+
+    counts = np.bincount(bin_idx, minlength=n_bins)
+    counts[counts == 0] = 1  # avoid div by zero
+
+    weights = 1.0 / counts[bin_idx]
+    weights /= weights.mean()  # normalize
+
+    return weights
+
+
 def create_projections_fast(hit_layer, hit_col, hit_row, bins):
 
     mask = hit_layer >= 4
@@ -47,13 +64,12 @@ def create_projections_fast(hit_layer, hit_col, hit_row, bins):
 
 
 
-
-
 class CNNProjectionDataset(Dataset):
     def __init__(self, file_name, bins):
         root_file = uproot.open(file_name)
 
         truth = root_file["event"].arrays(library="np")
+        primaries = root_file["primaries"].arrays(library="np")
         hits = root_file["Hits/pixelHits"]
 
         event_id   = hits["event_id"].array(library="np")
@@ -74,10 +90,29 @@ class CNNProjectionDataset(Dataset):
             )
         }
 
+        # Build primary lepton lookup
+        lepton_mask = np.isin(np.abs(primaries["PDG"]), [11, 13, 15])
+        lepton_mask = np.isin(np.abs(primaries["PDG"]), [11, 13, 15])
+
+        primaries = {
+            key: value[lepton_mask]
+            for key, value in primaries.items()
+        }
+
+        primaries_map = {
+            evt: (E, theta)
+                for evt, E, theta in zip(
+                    primaries["evtID"],
+                    primaries["E"],
+                    primaries["Eta"]
+                )
+        }
+
         self.zx = []
         self.zy = []
         self.nhits = []
         self.targets = []
+        self.sample_weights = compute_energy_weights(truth["initE"])
 
         # Group hits ONCE
         unique_evt, evt_index = np.unique(event_id, return_inverse=True)
@@ -101,28 +136,33 @@ class CNNProjectionDataset(Dataset):
             zx = torch.from_numpy(np.log1p(zx)).unsqueeze(0).float()
             zy = torch.from_numpy(np.log1p(zy)).unsqueeze(0).float()
 
-            # nhits = torch.from_numpy(np.log1p(nhits)).unsqueeze(0).float()
+            nhits = torch.from_numpy(np.log1p([nhits])).unsqueeze(0).float()
 
             self.zx.append(zx)
             self.zy.append(zy)
             self.nhits.append(nhits)
 
             E, vx, vy, vz = truth_map[evt]
-            self.targets.append((E, vx, vy, vz))
+            ELep, EtaLep = primaries_map[evt]
+            self.targets.append((E, vx, vy, vz, ELep, EtaLep))
 
     def __len__(self):
         return len(self.zx)
 
     def __getitem__(self, idx):
-        E, vx, vy, vz = self.targets[idx]
+        E, vx, vy, vz, ELep, EtaLep = self.targets[idx]
+        # E, vx, vy, vz= self.targets[idx]
         return (
             self.zx[idx],
             self.zy[idx],
         ), {
             "E_nu": np.log10(E/1000), # Mev -> GeV
+            "weight": self.sample_weights[idx],
             "vx": vx,
             "vy": vy,
             "vz": vz,
+            "E_lep": np.log10(ELep/1000), # MeV -> GeV
+            "Eta_lep": EtaLep
         }
 
 
@@ -130,7 +170,7 @@ if __name__ == "__main__":
 
     input_files = glob.glob("/home/benwilson/data/pinpointG4_data/root/10000/*.root")
 
-    num_bins = 1048
+    num_bins = 2048
     num_layers = 100
     
     for fpath in input_files:
