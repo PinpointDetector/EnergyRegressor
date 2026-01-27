@@ -165,8 +165,10 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
 
     fig.delaxes(axes[-1])
 
-    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionPerBin.pdf")
-    plt.savefig(outfile)
+    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionPerBin")
+    for fmt in cfg.plotting.formats:
+        extn = fmt.lower().replace(".", "")
+        plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
 
 
@@ -225,12 +227,14 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
         ax.set_xscale("log")
         ax.set_yscale("log")
 
-    ax.set_xlabel(rf"True ${var_cfg.get("latex", varname)} {var_cfg.get("unit", "")}$")
-    ax.set_ylabel(rf"Reconstructed ${var_cfg.get("latex", varname)} {var_cfg.get("unit", "")}$")
+    ax.set_xlabel(rf"True ${var_cfg.get("latex", varname)}$ {var_cfg.get("unit", "")}")
+    ax.set_ylabel(rf"Reconstructed ${var_cfg.get("latex", varname)}$ {var_cfg.get("unit", "")}")
     ax.legend()
     plt.tight_layout()
-    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_TrueVsReco.pdf")
-    plt.savefig(outfile)
+    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_TrueVsReco")
+    for fmt in cfg.plotting.formats:
+        extn = fmt.lower().replace(".", "")
+        plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
     
 
@@ -276,9 +280,11 @@ def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
     latex_var = var_cfg.get("latex", varname)
     unit = var_cfg.get("unit", "")
     ax.set_xlabel(rf"True ${latex_var}$ {unit}")
-    ax.set_ylabel(rf"${latex_var} Resolution (σ)")
-    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionVsTrue.pdf")
-    plt.savefig(outfile)
+    ax.set_ylabel(rf"${latex_var}$ Resolution (σ)")
+    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionVsTrue")
+    for fmt in cfg.plotting.formats:
+        extn = fmt.lower().replace(".", "")
+        plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
 
 

@@ -18,7 +18,7 @@ data:
   test_split: 0.2
   val_split: 0.1
 
-prepocessing:
+preprocessing:
   input_dirpath: /home/benwilson/data/pinpointG4_data/root/10000/*.root
   output_dirpath: data/10000/
   num_bins_x: 2048
@@ -59,6 +59,11 @@ logging:
   mode: min
   save_top_k: 3
   verbose: False
+
+
+plotting:
+  formats: ["png", "pdf"]
+  dpi: 300
 
 
 variables:

@@ -9,8 +9,13 @@ from source.dataset import CNNProjectionDataset
 
 def preprocess_data(cfg: DictConfig):
 
-    input_files = glob.glob(cfg.prepocessing.input_dirpath)
-    output_dir = cfg.prepocessing.output_dirpath
+    input_files = glob.glob(cfg.preprocessing.input_dirpath)
+
+    assert len(input_files) > 0, f"No input files found in {cfg.preprocessing.input_dirpath}"
+    logging.info(f"Found {len(input_files)} input files to process.")
+
+    output_dir = cfg.preprocessing.output_dirpath
+    logging.info(f"Output directory: {output_dir}")
     os.makedirs(output_dir, exist_ok=True)
 
 
@@ -20,7 +25,7 @@ def preprocess_data(cfg: DictConfig):
         output_torch_path = os.path.join(output_dir, output_torch_path)
 
         dataset = CNNProjectionDataset(
-            fpath, bins=(cfg.prepocessing.num_bins_x, cfg.prepocessing.num_bins_y, cfg.prepocessing.num_bins_z)
+            fpath, bins=(cfg.preprocessing.num_bins_x, cfg.preprocessing.num_bins_y, cfg.preprocessing.num_bins_z)
         )
 
         logging.info(f"Saving dataset to {output_torch_path}")
