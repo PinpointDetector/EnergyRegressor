@@ -74,7 +74,7 @@ def run_inference(cfg, model, dataloader, device):
         y = torch.stack(
         [
             targets[t].float()
-            for t in cfg.training.targets.targets
+            for t in cfg.training.targets
         ],
         dim=1,  # (batch, n targets)
         )
@@ -120,14 +120,18 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
     axes = axes.flatten()
 
     bin_labels = []
-    for edgemin, edgemax in cfg.bins:
+    for edgemin, edgemax in var_cfg.bins:
         if edgemax == np.inf:
             bin_labels.append(f"> {edgemin} {var_cfg.get("unit", "")}")
         else:
             bin_labels.append(f"{edgemin}–{edgemax} {var_cfg.get("unit", "")}")
 
     for i, ((ymin, ymax), label) in enumerate(zip(var_cfg.bins, bin_labels)):
-        ax = axes[i]
+        try:
+            ax = axes[i]
+        except IndexError:
+            logging.warning("More bins defined than subplots available")
+            break
 
         mask = (y_true >= ymin) & (y_true < ymax)
         res_bin = resolution[mask]
@@ -148,13 +152,13 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
         sigma = np.std(res_bin)
 
         ax.set_title(label)
-        latex_var = var_cfg.get("latex", "Variable")
-        ax.set_xlabel(rf"$({latex_var}_{{\rm reco}} - {latex_var}_{{\rm true}}) / {latex_var}_{{\rm true}}$")
+        latex_var = var_cfg.get("latex", varname)
+        ax.set_xlabel(rf"$({latex_var}^{{\rm reco}} - {latex_var}^{{\rm true}}) / {latex_var}^{{\rm true}}$")
         ax.set_ylabel("Events")
 
         ax.text(
             0.05, 0.95,
-            f"Mean = {mean:.3f}\nσ = {sigma:.3f}",
+            f"Mean = {mean:.3f}\nStd. = {sigma:.3f}",
             transform=ax.transAxes,
             va="top",
         )
@@ -215,17 +219,17 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
             100,
         )
             
-    ax.plot(x, x, "r--", linewidth=1, label=rf"${var_cfg.get("latex", "Variable")}_{{\rm reco}} = {var_cfg.get("latex", "Variable")}_{{\rm true}}$")
+    ax.plot(x, x, "r--", linewidth=1, label=rf"${var_cfg.get("latex", varname)}^{{\rm reco}} = {var_cfg.get("latex", varname)}^{{\rm true}}$")
 
     if logscale:
         ax.set_xscale("log")
         ax.set_yscale("log")
 
-    ax.set_xlabel(rf"True {var_cfg.get("latex", "Variable")} {var_cfg.get("unit", "")}")
-    ax.set_ylabel(rf"Reconstructed {var_cfg.get("latex", "Variable")} {var_cfg.get("unit", "")}")
+    ax.set_xlabel(rf"True ${var_cfg.get("latex", varname)} {var_cfg.get("unit", "")}$")
+    ax.set_ylabel(rf"Reconstructed ${var_cfg.get("latex", varname)} {var_cfg.get("unit", "")}$")
     ax.legend()
     plt.tight_layout()
-    outfile = os.path.join(var_cfg.testing.run_dir, f"{varname}_TrueVsReco.pdf")
+    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_TrueVsReco.pdf")
     plt.savefig(outfile)
     logging.info(f"Plotted {outfile}")
     
@@ -269,10 +273,10 @@ def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
         fmt="o",
     )
     ax.set_xscale("log")
-    latex_var = var_cfg.get("latex", "Variable")
+    latex_var = var_cfg.get("latex", varname)
     unit = var_cfg.get("unit", "")
-    ax.set_xlabel(rf"True {latex_var} {unit}")
-    ax.set_ylabel(rf"{latex_var} Resolution (σ)")
+    ax.set_xlabel(rf"True ${latex_var}$ {unit}")
+    ax.set_ylabel(rf"${latex_var} Resolution (σ)")
     outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionVsTrue.pdf")
     plt.savefig(outfile)
     logging.info(f"Plotted {outfile}")
@@ -325,6 +329,7 @@ def run_testing(cfg: DictConfig):
     )
 
     for varname in cfg_this_run.training.targets:
+
         plot_resolution_hists(cfg, varname, targets_true, targets_pred)
         plot_resolution_vs_target(cfg, varname, targets_true, targets_pred)
         plot_true_vs_reco(cfg, varname, targets_true, targets_pred)

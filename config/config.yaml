@@ -50,7 +50,7 @@ testing:
   run_dir: null
   batch_size: 32
   num_workers: 16
-  checkpoint_dir: version_0/checkpoints
+  checkpoint_dir: lightning_logs/version_0/checkpoints
   checkpoint_filepath: null
 
 logging:
@@ -65,21 +65,21 @@ variables:
 
   E_nu: 
     name: "Neutrino Energy"
-    latex": "E_{\\nu}"
+    latex: "E_{\\nu}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, np.inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
 
   E_lep: 
     name: "Lepton Energy"
-    latex": "E_{\\mathrm{lep}}"
+    latex: "E_{\\mathrm{lep}}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, np.inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
 
   Eta_lep:
     name: "Lepton Pseudorapidity"
-    latex": "\\eta_{\\mathrm{lep}}"
+    latex: "\\eta_{\\mathrm{lep}}"
     unit: ""
     transformation: null
-    bins: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6,7], [7, 8], [8, 9], [9, np.inf]]
+    bins: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6,7], [7, 8], [8, 9], [9, .inf]]
