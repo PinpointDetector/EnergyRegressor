@@ -138,7 +138,11 @@ class CNNProjectionDataset(Dataset):
             self.nhits.append(nhits)
 
             E, vx, vy, vz = truth_map[evt]
-            ELep, EtaLep = primaries_map[evt]
+            try:
+                ELep, EtaLep = primaries_map[evt]
+            except KeyError: # NC events have no primary lepton, fill with dummy values
+                ELep, EtaLep = 1e-6, 1e-6 # small value to avoid issues with log scale
+                continue
             self.targets.append((E, vx, vy, vz, ELep, EtaLep))
 
     def __len__(self):
