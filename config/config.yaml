@@ -36,7 +36,7 @@ model:
 
 training:
   batch_size: 16
-  max_epochs: 50
+  max_epochs: 100
   learning_rate: 0.001
   targets: ["E_nu", "E_lep", "Eta_lep"]
   num_workers: 16
