@@ -18,26 +18,22 @@ from preprocess import CNNProjectionDataset
 
 
 # ---------------------------
-# Energy binning (GeV)
+# eta binning (GeV)
 # ---------------------------
-ENERGY_BINS = [
-    (0, 100),
-    (100, 200),
-    (200, 300),
-    (300, 400),
-    (400, 600),
-    (600, 1000),
-    (1000, np.inf),
+ETA_BINS = [
+    (7, 8),
+    (8.5, 9),
+    (9.25, 8.5),
+    (9.5, 10),
+    (10, np.inf),
 ]
 
 BIN_LABELS = [
-    "0–100 GeV",
-    "100–200 GeV",
-    "200–300 GeV",
-    "300–400 GeV",
-    "400–600 GeV",
-    "600–1000 GeV",
-    "> 1000 GeV",
+    "7 - 8",
+    "8.5 - 9",
+    "9.25 - 9.5",
+    "9.5 - 10",
+    "> 10",
 ]
 
 
@@ -46,7 +42,7 @@ BIN_LABELS = [
 # ---------------------------
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Per-bin energy resolution plots"
+        description="Per-bin eta resolution plots"
     )
 
     parser.add_argument(
@@ -99,12 +95,37 @@ def run_inference(model, dataloader, device):
         zx = zx.to(device)
         zy = zy.to(device)
 
-        y_log_true = targets["E_nu"].float().to(device)
+        y_log_true = torch.stack(
+        [
+            targets[t].float()
+            for t in ["E_lep", 'Eta_lep']
+        ],
+        dim=1,  # (batch, n targets)
+        )
+
+        # y_log_true = targets["E_lep", 'Eta_lep'].float().to(device)
+
+        y_log_true = torch.stack(
+        [
+            targets[t].float()
+            for t in ["E_lep", 'Eta_lep']
+        ],
+        dim=1,  # (batch, n targets)
+        ).float().to(device)
+
         y_log_pred = model((zx, zy))
 
         # Undo log10 scaling
-        E_true.append(10 ** y_log_true.cpu().numpy())
-        E_pred.append(10 ** y_log_pred.cpu().numpy())
+        # E_true.append(y_log_true.cpu()[:,1].numpy())
+        # E_pred.append(y_log_pred.cpu()[:,1].numpy())
+        y_true = y_log_true.cpu()[:,1].numpy()
+        y_pred = y_log_pred.cpu()[:,1].numpy()
+
+        y_true = 2 * np.arctan(np.exp(y_true)) - np.pi/2
+        y_pred = 2 * np.arctan(np.exp(y_pred)) - np.pi/2
+
+        E_true.append(y_true)
+        E_pred.append(y_pred)
 
     return (
         np.concatenate(E_true),
@@ -121,7 +142,7 @@ def plot_resolution_hists(E_true, E_pred):
     fig, axes = plt.subplots(3, 3, figsize=(12, 10), constrained_layout=True)
     axes = axes.flatten()
 
-    for i, ((emin, emax), label) in enumerate(zip(ENERGY_BINS, BIN_LABELS)):
+    for i, ((emin, emax), label) in enumerate(zip(ETA_BINS, BIN_LABELS)):
         ax = axes[i]
 
         mask = (E_true >= emin) & (E_true < emax)
@@ -154,9 +175,9 @@ def plot_resolution_hists(E_true, E_pred):
         )
 
     fig.delaxes(axes[-1])
-    plt.savefig("EnergyResolutionPerBin.pdf")
+    plt.savefig("etaResolutionPerBin_E_lep.pdf")
     # plt.show()
-    print("Plotted EnergyResolutionPerBin.pdf")
+    print("Plotted etaResolutionPerBin_E_lep.pdf")
 
 
 def plot_true_vs_reco(E_true, E_pred, logscale=False):
@@ -206,23 +227,23 @@ def plot_true_vs_reco(E_true, E_pred, logscale=False):
         ax.set_xscale("log")
         ax.set_yscale("log")
 
-    ax.set_xlabel("True Energy [GeV]")
-    ax.set_ylabel("Reconstructed Energy [GeV]")
+    ax.set_xlabel("True eta ")
+    ax.set_ylabel("Reconstructed eta ")
     ax.legend()
     plt.tight_layout()
-    plt.savefig("ETrueVsEReco.pdf")
-    print("Plotted ETrueVsEReco.pdf")
+    plt.savefig("EtaTrueVsEtaReco_Eta_lep.pdf")
+    print("Plotted EtaTrueVsEtaReco_Eta_lep.pdf")
     
 
 
-def plot_resolution_vs_energy(E_true, E_pred):
+def plot_resolution_vs_eta(E_true, E_pred):
     resolution = (E_pred - E_true) / E_true
 
     bin_centers = []
     sigmas = []
     sigma_errs = []
 
-    for emin, emax in ENERGY_BINS:
+    for emin, emax in ETA_BINS:
         mask = (E_true >= emin) & (E_true < emax)
         res_bin = resolution[mask]
 
@@ -245,10 +266,10 @@ def plot_resolution_vs_energy(E_true, E_pred):
         fmt="o",
     )
     ax.set_xscale("log")
-    ax.set_xlabel("True Energy [GeV]")
-    ax.set_ylabel("Energy Resolution (σ)")
-    plt.savefig("EnergyResolution.pdf")
-    print("Plotted EnergyResolution.pdf")
+    ax.set_xlabel("True eta ")
+    ax.set_ylabel("eta Resolution (σ)")
+    plt.savefig("etaResolution_E_lep.pdf")
+    print("Plotted etaResolution_E_lep.pdf")
 
 
 # ---------------------------
@@ -268,7 +289,7 @@ def main():
     datamodule.setup()
 
     # Reconstruct model exactly as in training
-    backbone = RegressionCNN(feature_dim=64)
+    backbone = RegressionCNN(feature_dim=128, num_targets=2)
     model = EnergyRegressor.load_from_checkpoint(
         args.checkpoint,
         model=backbone,
@@ -284,7 +305,7 @@ def main():
     )
 
     plot_resolution_hists(E_true, E_pred)
-    plot_resolution_vs_energy(E_true, E_pred)
+    plot_resolution_vs_eta(E_true, E_pred)
     plot_true_vs_reco(E_true, E_pred)
 
 

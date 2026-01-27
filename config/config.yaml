@@ -1,0 +1,85 @@
+---
+
+hydra:
+  help:
+    template:
+      'TODO: Add help message'
+  run:
+    dir:
+      logs/${logging.name}/${now:%Y-%m-%d_%H-%M-%S}
+
+mode: train
+
+device: gpu
+
+data:
+  datapath: data/10000/*.pt
+  train_split: 0.7
+  test_split: 0.2
+  val_split: 0.1
+
+prepocessing:
+  input_dirpath: /home/benwilson/data/pinpointG4_data/root/10000/*.root
+  output_dirpath: data/10000/
+  num_bins_x: 2048
+  num_bins_y: 2048
+  num_bins_z: 100
+
+model:
+  architecture: RegressionCNN
+  feature_dim: 128
+  conv_dims: [32, 64, 128]
+  fc_dims: [128, 64]
+  kernel_size: 3
+  padding: 1
+  dropout: 0.3
+
+training:
+  batch_size: 16
+  max_epochs: 50
+  learning_rate: 0.001
+  targets: ["E_nu", "E_lep", "Eta_lep"]
+  num_workers: 16
+  
+  early_stopping:
+    monitor: val_loss
+    min_delta: 0.0
+    patience: 25
+
+testing:
+  run_dir: null
+  batch_size: 32
+  num_workers: 16
+  checkpoint_dir: version_0/checkpoints
+  checkpoint_filepath: null
+
+logging:
+  name: energy_regression_${mode}
+  monitor: val_loss
+  mode: min
+  save_top_k: 3
+  verbose: False
+
+
+variables:
+
+  E_nu: 
+    name: "Neutrino Energy"
+    latex": "E_{\\nu}"
+    unit: "GeV"
+    transformation: "log10"
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, np.inf]]
+
+  E_lep: 
+    name: "Lepton Energy"
+    latex": "E_{\\mathrm{lep}}"
+    unit: "GeV"
+    transformation: "log10"
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, np.inf]]
+
+  Eta_lep:
+    name: "Lepton Pseudorapidity"
+    latex": "\\eta_{\\mathrm{lep}}"
+    unit: ""
+    transformation: null
+    bins: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6,7], [7, 8], [8, 9], [9, np.inf]]

@@ -99,12 +99,19 @@ def run_inference(model, dataloader, device):
         zx = zx.to(device)
         zy = zy.to(device)
 
-        y_log_true = targets["E_lep"].float().to(device)
+        y_log_true = torch.stack(
+        [
+            targets[t].float()
+            for t in ["E_lep", 'Eta_lep']
+        ],
+        dim=1,  # (batch, n targets)
+        ).float().to(device)
+
         y_log_pred = model((zx, zy))
 
         # Undo log10 scaling
-        E_true.append(10 ** y_log_true.cpu().numpy())
-        E_pred.append(10 ** y_log_pred.cpu().numpy())
+        E_true.append(10 ** y_log_true.cpu()[:,0].numpy())
+        E_pred.append(10 ** y_log_pred.cpu()[:,0].numpy())
 
     return (
         np.concatenate(E_true),
@@ -268,7 +275,7 @@ def main():
     datamodule.setup()
 
     # Reconstruct model exactly as in training
-    backbone = RegressionCNN(feature_dim=128)
+    backbone = RegressionCNN(feature_dim=128, num_targets=2)
     model = EnergyRegressor.load_from_checkpoint(
         args.checkpoint,
         model=backbone,

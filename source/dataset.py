@@ -1,19 +1,14 @@
+
 import logging
-
-import hist
-import numpy as np
-import pandas as pd
+import random
 import torch
-import glob
-from torch.utils.data import Dataset
 import uproot
-import os
+import torch
+from torch.utils.data import Dataset, DataLoader
+import pytorch_lightning as pl
 from tqdm import tqdm
-import awkward as ak
-import matplotlib.pyplot as plt
-import mplhep
-
 import numpy as np
+
 
 def compute_energy_weights(energies, n_bins=20):
     logE = np.log10(energies)
@@ -30,7 +25,7 @@ def compute_energy_weights(energies, n_bins=20):
     return weights
 
 
-def create_projections_fast(hit_layer, hit_col, hit_row, bins):
+def create_projections(hit_layer, hit_col, hit_row, bins):
 
     mask = hit_layer >= 4
     if not np.any(mask):
@@ -123,7 +118,7 @@ class CNNProjectionDataset(Dataset):
             if evt not in truth_map:
                 continue
 
-            mean_x, mean_y, zx, zy = create_projections_fast(
+            mean_x, mean_y, zx, zy = create_projections(
                 np.ravel(hit_layer[idx][0]),
                 np.ravel(hit_col[idx][0]),
                 np.ravel(hit_row[idx][0]),
@@ -166,22 +161,91 @@ class CNNProjectionDataset(Dataset):
         }
 
 
-if __name__ == "__main__":
+class CombinedDataset(Dataset):
+    def __init__(self, pt_files):
+        self.datasets = [torch.load(f, map_location="cpu", weights_only=False) for f in pt_files]
+        self.cum_lengths = []
+        total = 0
+        for ds in self.datasets:
+            total += len(ds)
+            self.cum_lengths.append(total)
 
-    input_files = glob.glob("/home/benwilson/data/pinpointG4_data/root/10000/*.root")
+    def __len__(self):
+        return self.cum_lengths[-1]
 
-    num_bins = 2048
-    num_layers = 100
-    
-    for fpath in input_files:
+    def __getitem__(self, idx):
+        for ds_idx, end in enumerate(self.cum_lengths):
+            if idx < end:
+                start = 0 if ds_idx == 0 else self.cum_lengths[ds_idx - 1]
+                return self.datasets[ds_idx][idx - start]
+        raise IndexError
 
-        output_torch_path = os.path.basename(fpath).replace(".root", ".pt")
 
-        dataset = CNNProjectionDataset(
-            fpath, bins=(num_bins, num_bins, num_layers)
+class ProjectionDataModule(pl.LightningDataModule):
+    def __init__(
+        self,
+        pt_files,
+        batch_size=16,
+        num_workers=4,
+        train_test_val_split=(0.7, 0.2, 0.1),
+    ):
+        super().__init__()
+        self.pt_files = pt_files
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.train_split = train_test_val_split[0]
+        self.test_split = train_test_val_split[1]
+        self.val_split = train_test_val_split[2]
+
+        assert abs(self.train_split + self.test_split + self.val_split - 1.0) < 1e-6, "Splits must sum to 1.0"
+
+        self.setup()
+
+    def setup(self, stage=None):
+        files = list(self.pt_files)
+
+        rng = random.Random(42)
+        rng.shuffle(files)
+
+        n = len(files)
+        n_test = int(0.2 * n)
+        n_val = int(0.1 * n)
+
+        test_files = files[:n_test]
+        val_files = files[n_test:n_test + n_val]
+        train_files = files[n_test + n_val:]
+
+        self.train_ds = CombinedDataset(train_files)
+        self.val_ds   = CombinedDataset(val_files)
+        self.test_ds  = CombinedDataset(test_files)
+
+        logging.info(f"Train events: {len(self.train_ds)}")
+        logging.info(f"Val events:   {len(self.val_ds)}")
+        logging.info(f"Test events:  {len(self.test_ds)}")
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_ds,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=True,
         )
 
-        logging.info(f"Saving dataset to {output_torch_path}")
-        torch.save(dataset, output_torch_path)
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_ds,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
 
-        # break
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_ds,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )

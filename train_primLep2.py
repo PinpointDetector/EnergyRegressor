@@ -14,9 +14,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import EarlyStopping
 from model import RegressionCNN  # your model file
 
+from test_primLep import *
+
 class CombinedDataset(Dataset):
     def __init__(self, pt_files):
-        self.datasets = [torch.load(f, map_location="cpu", weights_only=False) for f in pt_files]
+        self.datasets = [torch.load(f, map_location="cpu") for f in pt_files]
         self.cum_lengths = []
         total = 0
         for ds in self.datasets:
@@ -100,29 +102,29 @@ class EnergyRegressor(pl.LightningModule):
         self,
         model,
         lr=1e-3,
-        use_weights=False
+        targets=("E_lep",)
     ):
         super().__init__()
         self.model = model
         self.lr = lr
-        self.use_weights = use_weights
+        self.targets = targets
 
     def forward(self, x):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
         (zx, zy), targets = batch
-        y = targets["E_nu"].float()
-        
 
+        y = torch.stack(
+        [
+            targets[t].float()
+            for t in self.targets
+        ],
+        dim=1,  # (batch, n targets)
+    )
         y_hat = self((zx, zy))
+        loss = F.mse_loss(y_hat, y)
         
-        if self.use_weights:
-            w = targets["weight"].float()
-            loss = (w * (y_hat - y) ** 2).mean()
-        else:
-            loss = F.mse_loss(y_hat, y)
-
         self.log("train_loss", loss, prog_bar=True)
         rmse = torch.sqrt(loss)
         self.log("train_rmse", rmse, prog_bar=True)
@@ -132,7 +134,14 @@ class EnergyRegressor(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         (zx, zy), targets = batch
-        y = targets["E_nu"].float()
+
+        y = torch.stack(
+        [
+            targets[t].float()
+            for t in self.targets
+        ],
+        dim=1,  # (batch, n targets)
+        )
 
         y_hat = self((zx, zy))
         loss = F.mse_loss(y_hat, y)
@@ -144,12 +153,23 @@ class EnergyRegressor(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         (zx, zy), targets = batch
-        y = targets["E_nu"].float()
+        y = torch.stack(
+        [
+            targets[t].float()
+            for t in self.targets
+        ],
+        dim=1,  # (batch, n targets)
+        )
 
         y_hat = self((zx, zy))
         loss = F.mse_loss(y_hat, y)
 
         self.log("test_loss", loss)
+
+        plot_resolution_hists(y.cpu(), y_hat.cpu())
+        plot_resolution_vs_energy(y.cpu(), y_hat.cpu())
+        plot_true_vs_reco(y.cpu(), y_hat.cpu())
+
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), self.lr)
@@ -157,7 +177,7 @@ class EnergyRegressor(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             factor=0.5,
-            patience=20,
+            patience=10,
             min_lr=1e-6,
         )
 
@@ -180,7 +200,7 @@ if __name__ == "__main__":
 
     logger = TensorBoardLogger(
     save_dir="logs",
-    name="energy_regression",
+    name="energy_regression_primLep",
 )
 
 
@@ -188,13 +208,14 @@ if __name__ == "__main__":
 
     datamodule = ProjectionDataModule(
         pt_files=pt_files,
-        batch_size=128,
+        batch_size=64,
         num_workers=16,
     )
 
     model = EnergyRegressor(
-        model=RegressionCNN(feature_dim=64),
+        model=RegressionCNN(feature_dim=128, num_targets=2),
         lr=1e-3,
+        targets=("E_lep", "Eta_lep")
     )
 
     checkpoint_cb = ModelCheckpoint(
@@ -216,7 +237,7 @@ if __name__ == "__main__":
     # model.eval()
     # (zx, zy), targets = datamodule.val_ds[0]
     # pred = model((zx.unsqueeze(0), zy.unsqueeze(0)))
-    # print(pred.item(), targets["E_nu"])
+    # print(pred.item(), targets["E_lep"])
 
 
     trainer = Trainer(
@@ -230,3 +251,6 @@ if __name__ == "__main__":
 
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule)
+
+
+    
