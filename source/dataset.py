@@ -10,7 +10,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-def compute_energy_weights(energies, n_bins=20):
+def compute_energy_weights(energies, n_bins=100):
     logE = np.log10(energies)
 
     bins = np.linspace(logE.min(), logE.max(), n_bins + 1)
@@ -55,7 +55,14 @@ def create_projections(hit_layer, hit_col, hit_row, bins):
         range=((0, bins[2]), (mean_y - y_half, mean_y + y_half)),
     )
 
-    return int(mean_x), int(mean_y), zx, zy
+    xy, _, _ = np.histogram2d(
+        hit_col,
+        hit_row,
+        bins=(bins[0], bins[1]),
+        range=((mean_x - x_half, mean_x + x_half), (mean_y - y_half, mean_y + y_half)),
+    )
+
+    return int(mean_x), int(mean_y), zx, zy, xy
 
 
 
@@ -87,24 +94,40 @@ class CNNProjectionDataset(Dataset):
 
         # Build primary lepton lookup
         lepton_mask = np.isin(np.abs(primaries["PDG"]), [11, 13, 15])
-        lepton_mask = np.isin(np.abs(primaries["PDG"]), [11, 13, 15])
+        neutrino_mask = np.isin(np.abs(primaries["PDG"]), [12, 14, 16])
+        charged_hadron_mask = np.isin(np.abs(primaries["charge"]), [1])
 
-        primaries = {
+        primary_leptons = {
             key: value[lepton_mask]
             for key, value in primaries.items()
         }
 
-        primaries_map = {
+        primary_charged_hadrons = {
+            key: value[~lepton_mask & ~neutrino_mask & charged_hadron_mask]
+            for key, value in primaries.items()
+        }
+
+        primary_lepton_map = {
             evt: (E, theta)
                 for evt, E, theta in zip(
-                    primaries["evtID"],
-                    primaries["E"],
-                    primaries["Eta"]
+                    primary_leptons["evtID"],
+                    primary_leptons["E"],
+                    primary_leptons["Eta"]
                 )
+        }
+
+        primary_charged_hadrons_map = {
+            evt: (E, theta)
+                for evt, E, theta in zip(
+                    primary_charged_hadrons["evtID"],
+                    primary_charged_hadrons["E"],
+                    primary_charged_hadrons["Eta"]
+                )     
         }
 
         self.zx = []
         self.zy = []
+        self.xy = []
         self.nhits = []
         self.targets = []
         self.sample_weights = compute_energy_weights(truth["initE"])
@@ -118,7 +141,7 @@ class CNNProjectionDataset(Dataset):
             if evt not in truth_map:
                 continue
 
-            mean_x, mean_y, zx, zy = create_projections(
+            mean_x, mean_y, zx, zy, xy = create_projections(
                 np.ravel(hit_layer[idx][0]),
                 np.ravel(hit_col[idx][0]),
                 np.ravel(hit_row[idx][0]),
@@ -130,30 +153,37 @@ class CNNProjectionDataset(Dataset):
 
             zx = torch.from_numpy(np.log1p(zx)).unsqueeze(0).float()
             zy = torch.from_numpy(np.log1p(zy)).unsqueeze(0).float()
+            xy = torch.from_numpy(np.log1p(xy)).unsqueeze(0).float()
 
             nhits = torch.from_numpy(np.log1p([nhits])).unsqueeze(0).float()
 
             self.zx.append(zx)
             self.zy.append(zy)
+            self.xy.append(xy)
             self.nhits.append(nhits)
 
             E, vx, vy, vz = truth_map[evt]
             try:
-                ELep, EtaLep = primaries_map[evt]
+                ELep, EtaLep = primary_lepton_map[evt]
             except KeyError: # NC events have no primary lepton, fill with dummy values
                 ELep, EtaLep = 1e-6, 1e-6 # small value to avoid issues with log scale
                 continue
-            self.targets.append((E, vx, vy, vz, ELep, EtaLep))
+            
+            evt_mask = primary_charged_hadrons["evtID"] == evt
+            sum_EHad = primary_charged_hadrons["E"][evt_mask].sum() if len(primary_charged_hadrons["E"][evt_mask])>0 else 1e-6
+
+            self.targets.append((E, vx, vy, vz, ELep, EtaLep, sum_EHad))
 
     def __len__(self):
         return len(self.zx)
 
     def __getitem__(self, idx):
-        E, vx, vy, vz, ELep, EtaLep = self.targets[idx]
+        E, vx, vy, vz, ELep, EtaLep, EHad = self.targets[idx]
         # E, vx, vy, vz= self.targets[idx]
         return (
             self.zx[idx],
             self.zy[idx],
+            # self.xy[idx],
         ), {
             "E_nu": np.log10(E/1000), # Mev -> GeV
             "weight": self.sample_weights[idx],
@@ -161,7 +191,8 @@ class CNNProjectionDataset(Dataset):
             "vy": vy,
             "vz": vz,
             "E_lep": np.log10(ELep/1000), # MeV -> GeV
-            "Eta_lep": EtaLep
+            "Eta_lep": EtaLep,
+            "E_had": np.log10(EHad/1000) # MeV -> GeV
         }
 
 
