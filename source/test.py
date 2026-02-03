@@ -8,12 +8,31 @@ from omegaconf import OmegaConf, DictConfig
 from pathlib import Path
 import os
 import logging
+from typing import List
+from scipy.optimize import curve_fit
+import uproot
+from copy import deepcopy
 
 from source.model import RegressionCNN
 from source.train import ProjectionDataModule   
 from source.train import EnergyRegressor
 from source.preprocess import CNNProjectionDataset
 
+from dataclasses import dataclass
+from tqdm import tqdm
+
+
+@dataclass
+class ResolutionHistogram:
+    mean: float
+    std_dev: float
+    param_range: List
+    values: np.ndarray
+    edges: np.ndarray
+
+# Fit a line to the bias points
+def line(x, m, c):
+    return m*x + c
 
 def load_run_config(run_dir: str):
 
@@ -64,7 +83,7 @@ def run_inference(cfg, model, dataloader, device):
     targets_true = {t : [] for t in cfg.training.targets}
     targets_pred = {t : [] for t in cfg.training.targets}
 
-    for batch in dataloader:
+    for batch in tqdm(dataloader, desc="Running Inference..."):
         (zx, zy), targets = batch
 
         zx = zx.to(device)
@@ -104,20 +123,28 @@ def run_inference(cfg, model, dataloader, device):
     return targets_true, targets_pred
 
 
-def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
+def plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=None):
 
     var_cfg = cfg.variables.get(varname, {})
 
     assert var_cfg is not None, f"No config found for variable {varname}"
     assert "bins" in var_cfg, f"No binning defined for variable {varname} in config"
 
-    y_true = targets_true[varname]
-    y_pred = targets_pred[varname]
+    y_true = deepcopy(targets_true[varname])
+    y_pred = deepcopy(targets_pred[varname])
+
+    if bias_params is not None:
+        a, b = bias_params
+        correction = 1.0 + a * y_true + b
+        y_pred = y_pred / correction
 
     resolution = (y_pred - y_true) / y_true
 
+
     fig, axes = plt.subplots(3, 3, figsize=(12, 10), constrained_layout=True)
     axes = axes.flatten()
+
+    histograms = []
 
     bin_labels = []
     for edgemin, edgemax in var_cfg.bins:
@@ -140,7 +167,7 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
         #     ax.text(0.5, 0.5, "Too few events", ha="center", va="center")
         #     continue
 
-        ax.hist(
+        values, edges, _ = ax.hist(
             res_bin,
             bins=60,
             range=(-1, 1),
@@ -150,6 +177,8 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
 
         mean = np.mean(res_bin)
         sigma = np.std(res_bin)
+
+        histograms.append(ResolutionHistogram(mean=mean, std_dev=sigma, values=values, edges=edges, param_range=[ymin, ymax]))
 
         ax.set_title(label)
         latex_var = var_cfg.get("latex", varname)
@@ -166,20 +195,30 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred):
     fig.delaxes(axes[-1])
 
     outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionPerBin")
+    if bias_params is not None: outfile += "_BiasCorrected"
+
     for fmt in cfg.plotting.formats:
         extn = fmt.lower().replace(".", "")
         plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
 
+    return histograms
 
-def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
+
+def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False, bias_params=None):
 
     var_cfg = cfg.variables.get(varname, {})
 
     assert var_cfg is not None, f"No config found for variable {varname}"
 
-    y_true = targets_true[varname]
-    y_pred = targets_pred[varname]
+    y_true = deepcopy(targets_true[varname])
+    y_pred = deepcopy(targets_pred[varname])
+
+    if bias_params is not None:
+        a, b = bias_params
+        correction = 1.0 + a * y_true + b
+        y_pred = y_pred / correction
+
 
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -197,7 +236,7 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
             100,
         )
 
-    h = ax.hist2d(
+    h , xedges, yedges, image= ax.hist2d(
         y_true,
         y_pred,
         bins=[bins, bins],
@@ -205,7 +244,7 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
         cmap="viridis",
     )
 
-    plt.colorbar(h[3], label="Events", ax=ax)
+    plt.colorbar(image, label="Events", ax=ax)
 
     # y = x reference line
     if logscale:
@@ -231,11 +270,15 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False):
     ax.set_ylabel(rf"Reconstructed ${var_cfg.get("latex", varname)}$ {var_cfg.get("unit", "")}")
     ax.legend()
     plt.tight_layout()
+
     outfile = os.path.join(cfg.testing.run_dir, f"{varname}_TrueVsReco")
+    if bias_params is not None: outfile += "_BiasCorrected"
     for fmt in cfg.plotting.formats:
         extn = fmt.lower().replace(".", "")
         plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
+
+    return h, xedges, yedges
     
 
 def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
@@ -276,7 +319,21 @@ def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
         yerr=sigma_errs,
         fmt="o",
     )
+
+    for x, s in zip(bin_centers, sigmas):
+        if s < 1.0: continue
+        ax.annotate(
+            "",                    # no text
+            xy=(x, 1.0),            # arrow head
+            xytext=(x, 0.9),        # arrow tail
+            arrowprops=dict(
+                arrowstyle="->",
+                linewidth=1.5,
+            ),
+        )
+
     ax.set_xscale("log")
+    ax.set_ylim(0, 1)
     latex_var = var_cfg.get("latex", varname)
     unit = var_cfg.get("unit", "")
     ax.set_xlabel(rf"True ${latex_var}$ {unit}")
@@ -287,6 +344,97 @@ def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
         plt.savefig(f"{outfile}.{extn}", dpi=300)
     logging.info(f"Plotted {outfile}")
 
+
+def plot_bias(cfg, varname, targets_true, targets_pred, bias_params=None):
+
+    var_cfg = cfg.variables.get(varname, {})
+
+    assert var_cfg is not None, f"No config found for variable {varname}"
+    assert "bins" in var_cfg, f"No binning defined for variable {varname} in config"
+
+    y_true = targets_true[varname]
+    y_pred = targets_pred[varname]
+
+    resolution = (y_pred - y_true) / y_true
+
+    bin_centers = []
+    sigmas = []
+    sigma_errs = []
+    means = []
+
+    for emin, emax in var_cfg.bins:
+        mask = (y_true >= emin) & (y_true < emax)
+        res_bin = resolution[mask]
+
+        if len(res_bin) < 50:
+            continue
+
+        sigma = np.std(res_bin)
+        sigma_err = sigma / np.sqrt(2 * len(res_bin))
+        center = np.mean(y_true[mask])
+        mean = np.mean(res_bin)
+        means.append(mean)
+
+        bin_centers.append(center)
+        sigmas.append(sigma)
+        sigma_errs.append(sigma_err)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.errorbar(
+        bin_centers,
+        means,
+        yerr=sigmas,
+        fmt="o",
+    )
+
+    for x, s in zip(bin_centers, sigmas):
+        if -1 < s < 1.0: continue
+        if s > 1.0:
+            ax.annotate(
+                "",                    # no text
+                xy=(x, 1.0),            # arrow head
+                xytext=(x, 0.45),        # arrow tail
+                arrowprops=dict(
+                    arrowstyle="->",
+                    linewidth=1.5,
+                ),
+            )
+        elif s < -1.0:
+            ax.annotate(
+                "",                    # no text
+                xy=(x, -1.0),            # arrow head
+                xytext=(x, -0.45),        # arrow tail
+                arrowprops=dict(
+                    arrowstyle="->",
+                    linewidth=1.5,
+                ),
+            )
+    
+    popt, pcov = curve_fit(
+        line, bin_centers, means,
+        sigma=sigmas,
+        absolute_sigma=True
+    )
+
+    x_fit = np.linspace(min(bin_centers), max(bin_centers), 100)
+    y_fit = line(x_fit, *popt)
+    ax.plot(x_fit, y_fit, "r--", label=f"Fit: y = {popt[0]:.3e} x + {popt[1]:.3e}")
+    ax.legend()
+
+
+    # ax.set_xscale("log")
+    ax.set_ylim(-1, 1)
+    latex_var = var_cfg.get("latex", varname)
+    unit = var_cfg.get("unit", "")
+    ax.set_xlabel(rf"True ${latex_var}$ {unit}")
+    ax.set_ylabel(rf"${latex_var}$ Bias (Mean Resolution $\pm$ Std Dev)")
+    outfile = os.path.join(cfg.testing.run_dir, f"{varname}_Bias")
+    for fmt in cfg.plotting.formats:
+        extn = fmt.lower().replace(".", "")
+        plt.savefig(f"{outfile}.{extn}", dpi=300)
+    logging.info(f"Plotted {outfile}")
+
+    return popt
 
 def run_testing(cfg: DictConfig):
 
@@ -334,8 +482,16 @@ def run_testing(cfg: DictConfig):
         device,
     )
 
+    output_file = uproot.recreate(os.path.join(cfg.testing.run_dir, cfg.testing.output_file))
+
     for varname in cfg_this_run.training.targets:
 
-        plot_resolution_hists(cfg, varname, targets_true, targets_pred)
-        plot_resolution_vs_target(cfg, varname, targets_true, targets_pred)
-        plot_true_vs_reco(cfg, varname, targets_true, targets_pred)
+        res_hists = plot_resolution_hists(cfg, varname, targets_true, targets_pred)
+        # plot_resolution_vs_target(cfg, varname, targets_true, targets_pred)
+        true_v_reco = plot_true_vs_reco(cfg, varname, targets_true, targets_pred)
+        bias_fit = plot_bias(cfg, varname, targets_true, targets_pred)
+
+        res_hists = plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+        # plot_resolution_vs_target(cfg, varname, targets_true, targets_pred)
+        true_v_reco = plot_true_vs_reco(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+        bias_fit = plot_bias(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
