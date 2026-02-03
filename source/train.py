@@ -15,6 +15,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from source.dataset import CombinedDataset, ProjectionDataModule
 from source.model import ClassifierProjectionCNN, RegressionCNN
 
+# Source - https://stackoverflow.com/a
+# Posted by shtse8
+# Retrieved 2026-01-28, License - CC BY-SA 4.0
+def weighted_mse_loss(input, target, weight):
+    return (weight * (input - target) ** 2).mean()
 
 
 class EnergyRegressor(pl.LightningModule):
@@ -22,12 +27,14 @@ class EnergyRegressor(pl.LightningModule):
         self,
         model,
         lr=1e-3,
-        targets=("E_lep",)
+        targets=("E_lep",),
+        use_weights=False,
     ):
         super().__init__()
         self.model = model
         self.lr = lr
         self.targets = targets
+        self.use_weights = use_weights
 
     def forward(self, x):
         return self.model(x)
@@ -43,7 +50,13 @@ class EnergyRegressor(pl.LightningModule):
         dim=1,  # (batch, n targets)
     )
         y_hat = self((zx, zy))
-        loss = F.mse_loss(y_hat, y)
+
+        weights = targets["weight"]
+
+        if self.use_weights:
+            loss = weighted_mse_loss(y_hat, y, weights)
+        else:   
+            loss = F.mse_loss(y_hat, y)
         
         self.log("train_loss", loss, prog_bar=True)
         rmse = torch.sqrt(loss)
@@ -68,6 +81,7 @@ class EnergyRegressor(pl.LightningModule):
 
         self.log("val_loss", loss, prog_bar=True)
         rel_err = (y_hat - y) / y
+        self.log("val_rel_err_mean", rel_err.mean(), prog_bar=True)
         self.log("val_rel_err_std", rel_err.std(), prog_bar=True)
 
 
@@ -83,12 +97,8 @@ class EnergyRegressor(pl.LightningModule):
 
         y_hat = self((zx, zy))
         loss = F.mse_loss(y_hat, y)
-
         self.log("test_loss", loss)
-
-        # plot_resolution_hists(y.cpu(), y_hat.cpu())
-        # plot_resolution_vs_energy(y.cpu(), y_hat.cpu())
-        # plot_true_vs_reco(y.cpu(), y_hat.cpu())
+        
 
 
     def configure_optimizers(self):
