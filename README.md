@@ -8,7 +8,15 @@ This repository contains the framework for training the Pinpoint neutrino energy
 
 This code is configured using [`hydra`](https://hydra.cc) and [`pytorch lightning`](https://lightning.ai/docs/pytorch/stable/)
 
-TODO: Add an enviroment file
+To setup the enviroment install [`micromaba`](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html), if you've every used `miniconda` before, the usage is very similar - `mamba` is just a bit faster.
+With `micromaba` installed you can install the environment with:
+
+```bash
+mamba env create -f environment.yaml
+```
+
+
+## Running the code
 
 The code is steered by `nuRegressor.py` which can operate in in one of three modes:
 
