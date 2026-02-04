@@ -54,7 +54,7 @@ training:
     min_delta: 0.0
     patience: 40
 
-# Tetsing options
+# Configure the testing options
 testing:
   run_dir: null  # Override this option to set the run directory
   batch_size: 32
