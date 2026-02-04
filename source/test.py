@@ -30,6 +30,13 @@ class ResolutionHistogram:
     values: np.ndarray
     edges: np.ndarray
 
+    def get_hname(self):
+        return f"{self.param_range[0]} - {self.param_range[1]}"
+    
+    def as_numpy(self):
+        return self.values, self.edges
+
+
 # Fit a line to the bias points
 def line(x, m, c):
     return m*x + c
@@ -135,7 +142,7 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=
 
     if bias_params is not None:
         a, b = bias_params
-        correction = 1.0 + a * y_true + b
+        correction = 1.0 + a * y_pred + b
         y_pred = y_pred / correction
 
     resolution = (y_pred - y_true) / y_true
@@ -149,9 +156,9 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=
     bin_labels = []
     for edgemin, edgemax in var_cfg.bins:
         if edgemax == np.inf:
-            bin_labels.append(f"> {edgemin} {var_cfg.get("unit", "")}")
+            bin_labels.append(f"> {edgemin} {var_cfg.get('unit', '')}")
         else:
-            bin_labels.append(f"{edgemin}–{edgemax} {var_cfg.get("unit", "")}")
+            bin_labels.append(f"{edgemin}–{edgemax} {var_cfg.get('unit', '')}")
 
     for i, ((ymin, ymax), label) in enumerate(zip(var_cfg.bins, bin_labels)):
         try:
@@ -181,7 +188,7 @@ def plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=
         histograms.append(ResolutionHistogram(mean=mean, std_dev=sigma, values=values, edges=edges, param_range=[ymin, ymax]))
 
         ax.set_title(label)
-        latex_var = var_cfg.get("latex", varname)
+        latex_var = var_cfg.get('latex', varname)
         ax.set_xlabel(rf"$({latex_var}^{{\rm reco}} - {latex_var}^{{\rm true}}) / {latex_var}^{{\rm true}}$")
         ax.set_ylabel("Events")
 
@@ -216,7 +223,7 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False, 
 
     if bias_params is not None:
         a, b = bias_params
-        correction = 1.0 + a * y_true + b
+        correction = 1.0 + a * y_pred + b
         y_pred = y_pred / correction
 
 
@@ -260,14 +267,14 @@ def plot_true_vs_reco(cfg, varname, targets_true, targets_pred, logscale=False, 
             100,
         )
             
-    ax.plot(x, x, "r--", linewidth=1, label=rf"${var_cfg.get("latex", varname)}^{{\rm reco}} = {var_cfg.get("latex", varname)}^{{\rm true}}$")
+    ax.plot(x, x, "r--", linewidth=1, label=rf"${var_cfg.get('latex', varname)}^{{\rm reco}} = {var_cfg.get('latex', varname)}^{{\rm true}}$")
 
     if logscale:
         ax.set_xscale("log")
         ax.set_yscale("log")
 
-    ax.set_xlabel(rf"True ${var_cfg.get("latex", varname)}$ {var_cfg.get("unit", "")}")
-    ax.set_ylabel(rf"Reconstructed ${var_cfg.get("latex", varname)}$ {var_cfg.get("unit", "")}")
+    ax.set_xlabel(rf"True ${var_cfg.get('latex', varname)}$ {var_cfg.get('unit', '')}")
+    ax.set_ylabel(rf"Reconstructed ${var_cfg.get('latex', varname)}$ {var_cfg.get('unit', '')}")
     ax.legend()
     plt.tight_layout()
 
@@ -334,8 +341,8 @@ def plot_resolution_vs_target(cfg, varname, targets_true, targets_pred):
 
     ax.set_xscale("log")
     ax.set_ylim(0, 1)
-    latex_var = var_cfg.get("latex", varname)
-    unit = var_cfg.get("unit", "")
+    latex_var = var_cfg.get('latex', varname)
+    unit = var_cfg.get('unit', '')
     ax.set_xlabel(rf"True ${latex_var}$ {unit}")
     ax.set_ylabel(rf"${latex_var}$ Resolution (σ)")
     outfile = os.path.join(cfg.testing.run_dir, f"{varname}_ResolutionVsTrue")
@@ -424,8 +431,8 @@ def plot_bias(cfg, varname, targets_true, targets_pred, bias_params=None):
 
     # ax.set_xscale("log")
     ax.set_ylim(-1, 1)
-    latex_var = var_cfg.get("latex", varname)
-    unit = var_cfg.get("unit", "")
+    latex_var = var_cfg.get('latex', varname)
+    unit = var_cfg.get('unit', '')
     ax.set_xlabel(rf"True ${latex_var}$ {unit}")
     ax.set_ylabel(rf"${latex_var}$ Bias (Mean Resolution $\pm$ Std Dev)")
     outfile = os.path.join(cfg.testing.run_dir, f"{varname}_Bias")
@@ -491,7 +498,31 @@ def run_testing(cfg: DictConfig):
         true_v_reco = plot_true_vs_reco(cfg, varname, targets_true, targets_pred)
         bias_fit = plot_bias(cfg, varname, targets_true, targets_pred)
 
-        res_hists = plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+        res_hists_bias_corrected = plot_resolution_hists(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
         # plot_resolution_vs_target(cfg, varname, targets_true, targets_pred)
-        true_v_reco = plot_true_vs_reco(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
-        bias_fit = plot_bias(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+        true_v_rec_bias_corrected = plot_true_vs_reco(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+        # _ = plot_bias(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
+
+        means = np.array([h.mean for h in res_hists])
+        std_devs = np.array([h.std_dev for h in res_hists])
+        param_ranges = np.array([h.param_range for h in res_hists])
+        bias_fit_params = np.array(bias_fit)
+        
+        output_file[f"{varname}/resHists/stats"] = {"means": means, "std_devs": std_devs, "param_ranges": param_ranges}
+        output_file[f"{varname}/resHists/bias"] = {"bias_fit_params": bias_fit_params}
+        
+        output_file[f"{varname}/true_vs_reco"] = true_v_reco
+        output_file[f"{varname}/true_vs_reco_BiasCorr"] = true_v_rec_bias_corrected
+
+        means_bias_corr = np.array([h.mean for h in res_hists_bias_corrected])
+        std_devs_bias_corr  = np.array([h.std_dev for h in res_hists_bias_corrected])
+        param_ranges_bias_corr  = np.array([h.param_range for h in res_hists_bias_corrected])
+        
+        output_file[f"{varname}/resHistsBiasCorr/stats"] = {"means": means_bias_corr , "std_devs": std_devs_bias_corr , "param_ranges": param_ranges_bias_corr }
+
+        for hist in res_hists:
+            output_file[f"{varname}/resHists/{hist.get_hname()}"] = hist.as_numpy()
+        
+        for hist in res_hists_bias_corrected:
+            output_file[f"{varname}/resHistsBiasCorr/{hist.get_hname()}"] = hist.as_numpy()
+            

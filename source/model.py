@@ -120,15 +120,6 @@ class RegressionCNN(nn.Module):
         self.regressor.add_module("output", nn.Linear(fc_dims[-1], num_targets))
 
     def forward(self, x):
-        # zx_proj, _ = x
-
-        # zx_features = self.zx_cnn(zx_proj)
-        # # zy_features = self.zy_cnn(zy_proj)
-
-        # # combined_features = torch.cat([zx_features, zy_features], dim=1)
-
-        # # output = self.regressor(combined_features)
-        # output = self.regressor(zx_features)
 
         zx_proj, zy_proj = x
 
