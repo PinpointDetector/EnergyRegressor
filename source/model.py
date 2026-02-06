@@ -107,6 +107,8 @@ class RegressionCNN(nn.Module):
         self.zx_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
         self.zy_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
 
+        self.bilinear = nn.Bilinear(feature_dim, feature_dim, feature_dim)
+
 
         self.regressor = nn.Sequential()
         for i, dim in enumerate(fc_dims):
@@ -125,6 +127,14 @@ class RegressionCNN(nn.Module):
 
         zx_features = self.zx_cnn(zx_proj)
         zy_features = self.zy_cnn(zy_proj)
+
+        bilinear_features = self.bilinear(zx_features, zy_features)
+
+        combined_features = torch.cat(
+            [zx_features, zy_features, bilinear_features],
+            dim=1
+        )
+
 
         combined_features = torch.cat([zx_features, zy_features], dim=1)
         
