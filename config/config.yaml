@@ -17,7 +17,7 @@ device: gpu
 
 # Set the path to the training data and the test/train/validation splits
 data:
-  datapath: data/10001_wEHad/*.pt
+  datapath: data/10000/*.pt
   train_split: 0.7
   test_split: 0.2
   val_split: 0.1
@@ -86,28 +86,28 @@ variables:
     latex: "E_{\\nu}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[10, 50], [50, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
 
   E_lep: 
     name: "Lepton Energy"
     latex: "E_{\\mathrm{lep}}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[10, 50], [50, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
 
   Eta_lep:
     name: "Lepton Pseudorapidity"
     latex: "\\eta_{\\mathrm{lep}}"
     unit: ""
     transformation: null
-    bins: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6,7], [7, 8], [8, 9], [9, .inf]]
+    bins: [[0, 3], [3, 4], [4, 5], [5, 6], [6,7], [7, 8], [8, .inf]]
 
   E_had: 
     name: "Sum of Charged Hadron Energy"
     latex: "\\sum E_{\\mathrm{chg. had}}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[10, 50], [50, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
 
 
-exp_name: "my experiment"  # Just a string that can be set to name an experiment
+exp_name: "my experiment"  # Just a string that can be set to name an experiment. 

@@ -457,6 +457,7 @@ def run_testing(cfg: DictConfig):
 
     # Load the dataset
     pt_files = glob.glob(cfg_this_run.data.datapath)
+    logging.info(f"Loading data from {cfg_this_run.data.datapath}")
     assert len(pt_files) > 0, "No .pt files found"
 
     datamodule = ProjectionDataModule(
@@ -503,6 +504,7 @@ def run_testing(cfg: DictConfig):
         true_v_rec_bias_corrected = plot_true_vs_reco(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
         # _ = plot_bias(cfg, varname, targets_true, targets_pred, bias_params=bias_fit)
 
+        # Dump the results to a file
         means = np.array([h.mean for h in res_hists])
         std_devs = np.array([h.std_dev for h in res_hists])
         param_ranges = np.array([h.param_range for h in res_hists])
