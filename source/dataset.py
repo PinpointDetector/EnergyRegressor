@@ -198,7 +198,7 @@ class CNNProjectionDataset(Dataset):
 
 class CombinedDataset(Dataset):
     def __init__(self, pt_files):
-        self.datasets = [torch.load(f, map_location="cpu", weights_only=False) for f in pt_files]
+        self.datasets = [torch.load(f, map_location="cpu", weights_only=False, mmap=True) for f in pt_files]
         self.cum_lengths = []
         total = 0
         for ds in self.datasets:
