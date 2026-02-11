@@ -40,7 +40,7 @@ class EnergyRegressor(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        (zx, zy), targets = batch
+        x, targets = batch
 
         y = torch.stack(
         [
@@ -49,7 +49,7 @@ class EnergyRegressor(pl.LightningModule):
         ],
         dim=1,  # (batch, n targets)
     )
-        y_hat = self((zx, zy))
+        y_hat = self(x)
 
         weights = targets["weight"]
 
@@ -66,7 +66,7 @@ class EnergyRegressor(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        (zx, zy), targets = batch
+        x, targets = batch
 
         y = torch.stack(
         [
@@ -76,7 +76,7 @@ class EnergyRegressor(pl.LightningModule):
         dim=1,  # (batch, n targets)
         )
 
-        y_hat = self((zx, zy))
+        y_hat = self(x)
         loss = F.mse_loss(y_hat, y)
 
         self.log("val_loss", loss, prog_bar=True)
@@ -86,7 +86,7 @@ class EnergyRegressor(pl.LightningModule):
 
 
     def test_step(self, batch, batch_idx):
-        (zx, zy), targets = batch
+        x, targets = batch
         y = torch.stack(
         [
             targets[t].float()
@@ -95,7 +95,7 @@ class EnergyRegressor(pl.LightningModule):
         dim=1,  # (batch, n targets)
         )
 
-        y_hat = self((zx, zy))
+        y_hat = self()
         loss = F.mse_loss(y_hat, y)
         self.log("test_loss", loss)
         
@@ -153,6 +153,8 @@ def run_training(cfg: DictConfig):
             kernel_size=cfg.model.kernel_size,
             padding=cfg.model.padding,
             dropout=cfg.model.dropout,
+            use_scintBarsX=cfg.model.use_scintBarsX,
+            use_scintBarsY=cfg.model.use_scintBarsY,
         ).to(device),
         lr=1e-3,
         targets=cfg.training.targets,

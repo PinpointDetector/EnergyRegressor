@@ -65,6 +65,17 @@ def create_projections(hit_layer, hit_col, hit_row, bins):
     return int(mean_x), int(mean_y), zx, zy, xy
 
 
+def get_scint_hits_img(scint_layer, scint_col, scint_edep, nlayers, nbars=27): # nbarsX = 27, nbarsY = 20
+
+    det = np.zeros((nlayers, nbars))
+
+    for layer, col, edep in zip(scint_layer, scint_col, scint_edep):
+        det[layer, col] += edep
+
+    # det = det.unsqueeze(0)  # (1, 74, 26)
+
+    return det
+
 
 class CNNProjectionDataset(Dataset):
     def __init__(self, file_name, bins):
@@ -72,13 +83,21 @@ class CNNProjectionDataset(Dataset):
 
         truth = root_file["event"].arrays(library="np")
         primaries = root_file["primaries"].arrays(library="np")
+        geom = root_file["geometry"].arrays(library="np")
         hits = root_file["Hits/pixelHits"]
+        scints = root_file["Hits/scintHits"]
+
+        nlayers = geom["nLayers"][0]
 
         event_id   = hits["event_id"].array(library="np")
         hit_layer  = hits["hit_layerID"].array(library="np")
         hit_col    = hits["hit_colID"].array(library="np")
         hit_row    = hits["hit_rowID"].array(library="np")
 
+        scint_layer  = scints["layerID"].array(library="np")
+        scint_col    = scints["colID"].array(library="np")
+        scint_row    = scints["rowID"].array(library="np")
+        scint_edep   = scints["edep"].array(library="np")
 
         # Build truth lookup
         truth_map = {
@@ -128,7 +147,10 @@ class CNNProjectionDataset(Dataset):
         self.zx = []
         self.zy = []
         self.xy = []
+        self.scint_zx = []
+        self.scint_zy = []
         self.nhits = []
+        self.tot_scint_edep = []
         self.targets = []
         self.sample_weights = compute_energy_weights(truth["initE"])
 
@@ -151,23 +173,45 @@ class CNNProjectionDataset(Dataset):
                 continue
             nhits = len(np.ravel(hit_row[idx][0]))
 
+            scint_zx = get_scint_hits_img(
+                np.ravel(scint_layer[idx][0]),
+                np.ravel(scint_col[idx][0]),
+                np.ravel(scint_edep[idx][0]),
+                nlayers,
+                nbars=27
+                )
+            
+            scint_zy = get_scint_hits_img(
+                np.ravel(scint_layer[idx][0]),
+                np.ravel(scint_row[idx][0]),
+                np.ravel(scint_edep[idx][0]),
+                nlayers,
+                nbars=20
+                )
+
             zx = torch.from_numpy(np.log1p(zx)).unsqueeze(0).float()
             zy = torch.from_numpy(np.log1p(zy)).unsqueeze(0).float()
             xy = torch.from_numpy(np.log1p(xy)).unsqueeze(0).float()
 
+            scint_zx = torch.from_numpy(np.log1p(scint_zx)).unsqueeze(0).float()
+            scint_zy = torch.from_numpy(np.log1p(scint_zy)).unsqueeze(0).float()
+
             nhits = torch.from_numpy(np.log1p([nhits])).unsqueeze(0).float()
+            tot_scint_edep = np.sum(np.ravel(scint_edep[idx][0]))
 
             self.zx.append(zx)
             self.zy.append(zy)
             self.xy.append(xy)
+            self.scint_zx.append(scint_zx)
+            self.scint_zy.append(scint_zy)
             self.nhits.append(nhits)
+            self.tot_scint_edep.append(tot_scint_edep)
 
             E, vx, vy, vz = truth_map[evt]
             try:
                 ELep, EtaLep = primary_lepton_map[evt]
             except KeyError: # NC events have no primary lepton, fill with dummy values
                 ELep, EtaLep = 1e-6, 1e-6 # small value to avoid issues with log scale
-                continue
             
             evt_mask = primary_charged_hadrons["evtID"] == evt
             sum_EHad = primary_charged_hadrons["E"][evt_mask].sum() if len(primary_charged_hadrons["E"][evt_mask])>0 else 1e-6
@@ -183,6 +227,9 @@ class CNNProjectionDataset(Dataset):
         return (
             self.zx[idx],
             self.zy[idx],
+            self.scint_zx[idx],
+            self.scint_zy[idx],
+            # [self.nhits[idx], self.tot_scint_edep[idx]]
             # self.xy[idx],
         ), {
             "E_nu": np.log10(E/1000), # Mev -> GeV
@@ -198,7 +245,7 @@ class CNNProjectionDataset(Dataset):
 
 class CombinedDataset(Dataset):
     def __init__(self, pt_files):
-        self.datasets = [torch.load(f, map_location="cpu", weights_only=False) for f in pt_files]
+        self.datasets = [torch.load(f, map_location="cpu", weights_only=False, mmap=True) for f in pt_files]
         self.cum_lengths = []
         total = 0
         for ds in self.datasets:

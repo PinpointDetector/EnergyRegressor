@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
-
+import logging
 
 class CNNProjectionNetwork(nn.Module):
     """CNN for processing a single 2D projection"""
@@ -101,19 +101,46 @@ class RegressionCNN(nn.Module):
         kernel_size: int=3, 
         padding=1, 
         dropout: float=0.5,
-        num_targets: int = 3,):
+        num_targets: int = 3,
+        use_scintBarsX = False,
+        use_scintBarsY = False,
+        ):
+
+
 
         super(RegressionCNN, self).__init__()
         self.zx_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
         self.zy_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
 
-        self.bilinear = nn.Bilinear(feature_dim, feature_dim, feature_dim)
+        self.scint_zx_cnn = None
+        self.scint_zy_cnn = None
 
+        if use_scintBarsX:
+            self.scint_zx_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
+            logging.info("Added scint_zx_cnn")
+        if use_scintBarsY:
+            self.scint_zy_cnn = CNNProjectionNetwork(conv_dims=conv_dims, feature_dim=feature_dim, kernel_size=kernel_size, padding=padding, dropout=dropout)
+            logging.info("Added scint_zy_cnn")
+
+        reg_in_dim = 2 * feature_dim  # zx, zy, bilinear
+
+        if self.scint_zx_cnn is not None and self.scint_zy_cnn is not None:
+            reg_in_dim += feature_dim  # scint bilinear
+        elif self.scint_zx_cnn is not None:
+            reg_in_dim += feature_dim
+        elif self.scint_zy_cnn is not None:
+            reg_in_dim += feature_dim
+
+        # self.bilinear = nn.Bilinear(feature_dim, feature_dim, feature_dim)
+
+        # self.bilinear_scints = None
+        # if use_scintBarsX and use_scintBarsY:
+        #     self.bilinear_scints = nn.Bilinear(feature_dim, feature_dim, feature_dim)
 
         self.regressor = nn.Sequential()
         for i, dim in enumerate(fc_dims):
             if i == 0:
-                self.regressor.add_module(f"fc_{i}", nn.Linear(feature_dim * 2, dim))
+                self.regressor.add_module(f"fc_{i}", nn.Linear(reg_in_dim, dim))
             else:
                 self.regressor.add_module(f"fc_{i}", nn.Linear(fc_dims[i - 1], dim))
             self.regressor.add_module(f"relu_{i}", nn.ReLU())
@@ -123,21 +150,42 @@ class RegressionCNN(nn.Module):
 
     def forward(self, x):
 
-        zx_proj, zy_proj = x
+        zx_proj = x[0] 
+        zy_proj = x[1]
 
         zx_features = self.zx_cnn(zx_proj)
         zy_features = self.zy_cnn(zy_proj)
 
-        bilinear_features = self.bilinear(zx_features, zy_features)
-
-        combined_features = torch.cat(
-            [zx_features, zy_features, bilinear_features],
-            dim=1
-        )
-
-
         combined_features = torch.cat([zx_features, zy_features], dim=1)
+        # bilinear_features = self.bilinear(zx_features, zy_features)
+
+        # combined_features = torch.cat(
+        #     [zx_features, zy_features, bilinear_features],
+        #     dim=1
+        # )
+
+        scint_zx_features = None
+        if self.scint_zx_cnn is not None: 
+            scint_zx_proj = x[2]
+            scint_zx_features = self.scint_zx_cnn(scint_zx_proj)
+
+        scint_zy_features = None
+        if self.scint_zy_cnn is not None: 
+            scint_zy_proj = x[3]
+            scint_zy_features = self.scint_zy_cnn(scint_zy_proj)
+
+        if scint_zx_features is not None and scint_zy_features is not None:
+            # scint_bilinear_features = self.bilinear_scints(scint_zx_features, scint_zy_features)
+            # combined_features = torch.cat([scint_bilinear_features, combined_features], dim=1)
+            scint_combined_features = torch.cat([scint_zx_features, scint_zy_features], dim=1)
+            combined_features = torch.cat([scint_combined_features, combined_features], dim=1)
         
+        elif scint_zx_features is not None and scint_zy_features is None:
+            combined_features = torch.cat([scint_zx_features, combined_features], dim=1)
+
+        elif scint_zx_features is None and scint_zy_features is not None:
+            combined_features = torch.cat([scint_zy_features, combined_features], dim=1)
+
         output = self.regressor(combined_features)
 
         return output.squeeze(-1)  # Return shape (batch,) instead of (batch, 1) for single target regression

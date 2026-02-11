@@ -91,10 +91,10 @@ def run_inference(cfg, model, dataloader, device):
     targets_pred = {t : [] for t in cfg.training.targets}
 
     for batch in tqdm(dataloader, desc="Running Inference..."):
-        (zx, zy), targets = batch
+        x, targets = batch
 
-        zx = zx.to(device)
-        zy = zy.to(device)
+        # x.to(device)
+        x = [xx.to(device) for xx in x]
 
 
         y = torch.stack(
@@ -105,7 +105,7 @@ def run_inference(cfg, model, dataloader, device):
         dim=1,  # (batch, n targets)
         )
         
-        y_pred = model((zx, zy))
+        y_pred = model(x)
 
         for i, t in enumerate(cfg.training.targets):
             targets_true[t].append(y.cpu()[:,i].numpy())
@@ -475,6 +475,8 @@ def run_testing(cfg: DictConfig):
             kernel_size=cfg_this_run.model.kernel_size,
             padding=cfg_this_run.model.padding,
             dropout=cfg_this_run.model.dropout,
+            use_scintBarsX=cfg_this_run.model.get("use_scintBarsX", False),
+            use_scintBarsY=cfg_this_run.model.get("use_scintBarsY", False),
         ).to(device)
     model = EnergyRegressor.load_from_checkpoint(
         checkpoint_path,

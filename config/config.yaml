@@ -17,15 +17,15 @@ device: gpu
 
 # Set the path to the training data and the test/train/validation splits
 data:
-  datapath: data/10000/*.pt
+  datapath: data/10012/*.pt
   train_split: 0.7
   test_split: 0.2
   val_split: 0.1
 
 # Set the input/output path when preprocessing the ROOT NTuples -> pytorch .pt files
 preprocessing:
-  input_dirpath: /home/benwilson/data/pinpointG4_data/root/10001/*.root
-  output_dirpath: data/10001/
+  input_dirpath: /home/benwilson/data/pinpointG4_data/root/10012/*.root
+  output_dirpath: data/10012/
   num_bins_x: 2048  # binning for the CNN images
   num_bins_y: 2048
   num_bins_z: 100
@@ -39,6 +39,8 @@ model:
   kernel_size: 3
   padding: 1
   dropout: 0.3
+  use_scintBarsX: True
+  use_scintBarsY: False
 
 # Configure the training options
 training:
@@ -46,8 +48,8 @@ training:
   max_epochs: 500
   learning_rate: 0.001
   targets: ["E_nu", "E_lep", "Eta_lep"] # the regression targets
-  num_workers: 16
-  use_weights: False
+  num_workers: 4
+  use_weights: True
   
   early_stopping:
     monitor: val_loss
@@ -86,14 +88,14 @@ variables:
     latex: "E_{\\nu}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 800], [800, 1000], [1000, .inf]]
 
   E_lep: 
     name: "Lepton Energy"
     latex: "E_{\\mathrm{lep}}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 800], [800, 1000], [1000, .inf]]
 
   Eta_lep:
     name: "Lepton Pseudorapidity"
@@ -107,7 +109,7 @@ variables:
     latex: "\\sum E_{\\mathrm{chg. had}}"
     unit: "GeV"
     transformation: "log10"
-    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 1000], [1000, .inf]]
+    bins: [[0, 100], [100, 200], [200, 300], [300, 400], [400, 600], [600, 800], [800, 1000], [1000, .inf]]
 
 
 exp_name: "my experiment"  # Just a string that can be set to name an experiment. 
